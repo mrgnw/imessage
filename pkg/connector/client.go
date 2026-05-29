@@ -13184,11 +13184,13 @@ func transcodeToMP4(ctx context.Context, log *zerolog.Logger, data []byte, mimeT
 			return nil, "", ctx.Err()
 		}
 		defer func() { <-transcodeSem }()
+		log.Info().Str("mime", mimeType).Int("bytes", len(data)).Msg("Starting video transcoding")
 		out, e := ffmpeg.ConvertBytes(base, data, ".mp4", nil,
 			[]string{"-c", "copy", "-movflags", "+faststart"},
 			mimeType)
 		if e != nil {
 			// Remux failed (often an incompatible codec) — try a full re-encode.
+			log.Info().Str("mime", mimeType).Int("bytes", len(data)).Msg("Video remux failed, falling back to re-encode")
 			out, e = ffmpeg.ConvertBytes(base, data, ".mp4", nil,
 				[]string{"-c:v", "libx264", "-preset", "fast", "-crf", "23",
 					"-c:a", "aac", "-movflags", "+faststart"},
