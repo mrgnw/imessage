@@ -4224,7 +4224,7 @@ fn message_inst_to_wrapped(msg: &MessageInst) -> WrappedMessage {
 /// rustpush's own chatter at WARN and keep this wrapper's diagnostics at INFO.
 /// `sms_relay_shape` is the carrier relay payload diagnostic added by
 /// `third_party/patches/rustpush/log-sms-relay-payload-shape.patch`.
-const DEFAULT_RUST_LOG: &str = "warn,rustpush=warn,rustpushgo=info,sms_relay_shape=info";
+const DEFAULT_RUST_LOG: &str = "warn,rustpush=warn,rustpushgo=info,sms_relay_shape=info,open_absinthe=info";
 
 /// Foreign log sink. The Go bridge implements this so every Rust log record
 /// that passes the `RUST_LOG` filter lands in the bridge's own logger, and
