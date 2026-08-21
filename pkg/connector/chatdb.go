@@ -101,7 +101,7 @@ func (db *chatDB) findGroupChatGUID(portalID string, c *IMClient) string {
 
 		// Build member set from chat.db (add self, lowercase for case-insensitive matching)
 		chatMemberSet := make(map[string]struct{})
-		chatMemberSet[strings.ToLower(stripIdentifierPrefix(c.handle))] = struct{}{}
+		chatMemberSet[strings.ToLower(stripIdentifierPrefix(c.getHandle()))] = struct{}{}
 		for _, m := range info.Members {
 			chatMemberSet[strings.ToLower(stripIdentifierPrefix(m))] = struct{}{}
 		}
@@ -680,7 +680,7 @@ func chatDBMakeEventSender(msg *imessage.Message, c *IMClient) bridgev2.EventSen
 		return bridgev2.EventSender{
 			IsFromMe:    true,
 			SenderLogin: c.UserLogin.ID,
-			Sender:      makeUserID(c.handle),
+			Sender:      makeUserID(c.getHandle()),
 		}
 	}
 	return bridgev2.EventSender{

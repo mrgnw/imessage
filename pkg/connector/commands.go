@@ -79,6 +79,8 @@ func BridgeCommands() []*commands.FullHandler {
 		cmdStartChat,
 		cmdResolveIdentifierRedirect,
 		cmdLogout,
+		cmdListIdentities,
+		cmdSetIdentity,
 		cmdRestoreChat,
 		cmdRestoreDebug,
 		cmdMsgDebug,

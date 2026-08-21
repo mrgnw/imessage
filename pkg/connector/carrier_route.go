@@ -372,7 +372,7 @@ func (c *IMClient) hasSMSRelay() (has bool) {
 		}
 	}()
 
-	has = c.client.HasSmsRelay(c.handle)
+	has = c.client.HasSmsRelay(c.getHandle())
 
 	c.carrierCheckedMu.Lock()
 	c.smsRelayCheckedAt = time.Now()

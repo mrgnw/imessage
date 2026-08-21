@@ -132,7 +132,7 @@ func (c *IMClient) enumerateChatDBGUIDRefreshEntries(ctx context.Context) ([]cha
 				continue
 			}
 			members := make([]string, 0, len(info.Members)+1)
-			members = append(members, addIdentifierPrefix(c.handle))
+			members = append(members, addIdentifierPrefix(c.getHandle()))
 			for _, member := range info.Members {
 				members = append(members, addIdentifierPrefix(stripSmsSuffix(member)))
 			}

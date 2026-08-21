@@ -163,7 +163,7 @@ func (c *IMClient) validateTargetsSafe(targets []string) (valid []string) {
 			valid = nil
 		}
 	}()
-	return c.client.ValidateTargets(targets, c.handle)
+	return c.client.ValidateTargets(targets, c.getHandle())
 }
 
 // resolveSendTarget determines the best identifier to send to for a DM portal.
