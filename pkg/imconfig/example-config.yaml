@@ -114,6 +114,13 @@ typing_notifications: true
 # are unaffected. Message and history sync continue.
 disable_icloud_contacts: false
 
+# Store the Apple ID password hash once instead of twice. The hash is kept
+# inside account_persist_blob; when this is true, the separate
+# account_hashed_password_hex copy is cleared from the bridge DB and
+# session.json once the blob is verified to hold the same hash. Restore and
+# token refresh read it from the blob. Default false.
+drop_redundant_password_hash: false
+
 # External CardDAV server for contact name resolution.
 # Works with Google (app passwords), Nextcloud, Radicale, Fastmail, etc.
 # When configured, this is used instead of iCloud contacts.

@@ -1188,7 +1188,8 @@ func (c *IMClient) Connect(ctx context.Context) {
 		if meta.AccountUsername != "" && meta.AccountPET != "" && meta.AccountSPDBase64 != "" {
 			log.Info().Msg("Restoring iCloud TokenProvider from persisted credentials")
 			tp, err := safeRestoreTokenProvider(c.config, c.connection,
-				meta.AccountUsername, meta.AccountHashedPasswordHex,
+				meta.AccountUsername,
+				effectivePasswordHashHex(meta.AccountHashedPasswordHex, meta.AccountPersistBlob, meta.AccountADSID),
 				meta.AccountPET, meta.AccountSPDBase64, meta.AccountPersistBlob)
 			if err != nil {
 				log.Warn().Err(err).Msg("Failed to restore TokenProvider — cloud services unavailable")
@@ -11040,7 +11041,11 @@ func (c *IMClient) persistMmeDelegate(log zerolog.Logger) {
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to get rustpush account state for persistence")
 	} else if blob != nil && *blob != "" && meta.AccountPersistBlob != *blob {
+		meta.AccountHashedPasswordHex = effectivePasswordHashHex(meta.AccountHashedPasswordHex, meta.AccountPersistBlob, meta.AccountADSID)
 		meta.AccountPersistBlob = *blob
+		changed = true
+	}
+	if c.Main.Config.DropRedundantPasswordHash && dropRedundantPasswordHash(meta) {
 		changed = true
 	}
 	if !changed {

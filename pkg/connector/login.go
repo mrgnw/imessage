@@ -815,6 +815,9 @@ func completeLoginWithMeta(
 				log.Warn().Err(blobErr).Msg("Failed to capture rustpush account state for persistence")
 			}
 		}
+		if main.Config.DropRedundantPasswordHash && dropRedundantPasswordHash(meta) {
+			log.Info().Msg("Account blob carries the password hash; dropped the redundant hex copy")
+		}
 	} else {
 		log.Warn().Msg("No account persist data from login — cloud services will not be available")
 	}

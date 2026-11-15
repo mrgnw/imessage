@@ -1934,6 +1934,35 @@ mod persist_snapshot_tests {
         assert!(decoded.tokens.contains_key("preserved"));
     }
 
+    // Pinned byte-for-byte by TestPersistBlobPasswordHashReadsRustBlob in
+    // pkg/connector/password_hash_test.go, which reads the hash back in Go.
+    const GO_FIXTURE_BLOB: &str = "YnBsaXN0MDDSAQIDBFd2ZXJzaW9uV2FjY291bnQQAdYFBgcICQoLDA0ODwtYdXNlcm5hbWVfEA9oYXNoZWRfcGFzc3dvcmRWdG9rZW5zVWFkc2lkVGRzaWRWYWNuYW1lXxAUdXNlckBleGFtcGxlLmludmFsaWRPECAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eH9EQEV8QFWNvbS5hcHBsZS5ncy5pZG1zLnBldNISExQVVXRva2VuWmV4cGlyYXRpb25TcGV00hYXGBhfEBBzZWNzX3NpbmNlX2Vwb2NoXxARbmFub3Nfc2luY2VfZXBvY2gQAF4wMDAxMTEtMjItYWFhYRJJlgLSAAgADQAVAB0AHwAsADUARwBOAFQAWQBgAHcAmgD9AQwAnQC1ALoAwADLAM8A1ADnAPsAAAAAAAACAQAAAAAAAAAZAAAAAAAAAAAAAAAAAAABEQ==";
+
+    #[test]
+    fn persist_blob_matches_go_fixture() {
+        let snapshot: SharedPersistSnapshot = Arc::default();
+        let mut persisted = icloud_auth::PersistAccountData::default();
+        persisted.username = "user@example.invalid".to_string();
+        persisted.hashed_password = (0u8..32).collect();
+        persisted.adsid = "000111-22-aaaa".to_string();
+        persisted.dsid = 1234567890;
+        persisted.acname = "user@example.invalid".to_string();
+        persisted.tokens.insert(
+            "com.apple.gs.idms.pet".to_string(),
+            icloud_auth::FetchedToken {
+                token: "pet".to_string(),
+                expiration: std::time::UNIX_EPOCH,
+            },
+        );
+        record_account_persist(&snapshot, &persisted);
+        let blob = encode_persist_blob(&snapshot.lock().expect("persist snapshot lock"))
+            .expect("encode persist blob")
+            .expect("account snapshot");
+        assert_eq!(blob, GO_FIXTURE_BLOB);
+        let (decoded, _) = decode_persist_blob(&blob).expect("decode persist blob");
+        assert_eq!(decoded.hashed_password, persisted.hashed_password);
+    }
+
     #[test]
     fn restore_identity_accepts_legacy_dsid_keys_and_encodings() {
         let cases = [

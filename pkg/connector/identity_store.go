@@ -416,6 +416,7 @@ func CheckSessionRestore(requireKeychain bool) bool {
 // restored bridge can message, but CloudKit remains unavailable until a fresh
 // Apple login.
 func validateCloudKitRestoreState(state PersistedSessionState) error {
+	state.AccountHashedPasswordHex = effectivePasswordHashHex(state.AccountHashedPasswordHex, state.AccountPersistBlob, state.AccountADSID)
 	required := []struct {
 		name  string
 		value string

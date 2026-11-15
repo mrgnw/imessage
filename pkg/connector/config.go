@@ -136,6 +136,12 @@ type IMConfig struct {
 	// macOS Contacts are unaffected. Message and history sync continue. Default false.
 	DisableICloudContacts bool `yaml:"disable_icloud_contacts"`
 
+	// DropRedundantPasswordHash clears account_hashed_password_hex from the
+	// login metadata and session.json once account_persist_blob is proven to
+	// carry the same hash, so only one copy is stored. Restore and the PET
+	// refresh read the hash from the blob instead. Default false.
+	DropRedundantPasswordHash bool `yaml:"drop_redundant_password_hash"`
+
 	// DebugDisablePrivacy is a DEVELOPMENT-ONLY switch that reverts the
 	// bridge's privacy protections so plaintext is observable for debugging.
 	// MUST be false in any real deployment. Default false. When true:
@@ -257,6 +263,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Bool, "read_receipts")
 	helper.Copy(up.Bool, "typing_notifications")
 	helper.Copy(up.Bool, "disable_icloud_contacts")
+	helper.Copy(up.Bool, "drop_redundant_password_hash")
 	helper.Copy(up.Str, "carddav", "email")
 	helper.Copy(up.Str, "carddav", "url")
 	helper.Copy(up.Str, "carddav", "username")
