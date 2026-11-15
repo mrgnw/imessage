@@ -62,7 +62,7 @@ Disposition key:
 | ddeba1b5 | README simplification | SKIP (jason's README) |
 | 36358aff | Add v prefix to container image tag | SKIP (Docker CI) |
 | 47068c9e | Remove extra version tag as well | SKIP (Docker CI) |
-| 5f85500c | StatusKit notifications in DM room topics (default) | DEFER: portable, but defaults to `topic` and so changes lwittwer's notice behaviour. Open decision |
+| 5f85500c | StatusKit notifications in DM room topics (default) | PORTED `570f3596` on `harden-credentials`: `statuskit_notification_style`, default `title` (lwittwer's moon), `topic` optional. Jason's per-user override, install prompts and `notice` style not taken |
 | ab4c015d | Release workflow fix for rebrand | SKIP (jason's CI) |
 | 8d5cf801 | Replace network icon w/ Rustpush/OpenBubbles icon | SKIP: branding; lwittwer chose its icon in `451996cc` |
 | 3b12dfb5 | Add resiliency to CardDAV sync failures | TAKEN `cd92f45e`; conflict resolved, see below |
@@ -113,6 +113,8 @@ Does merging AGPL code into the MPL tree create an obligation?
   - 11 lines in `external_carddav.go`
   - 3 lines in `imessage/struct_test.go`
   - the RUST_LOG string in `lib.rs`
+  - the StatusKit topic option (`570f3596`, branch `harden-credentials`): `statusKitTopic`, the topic branch
+	in `OnStatusUpdate` and the `statuskit_notification_style` key
 - MPL-2.0 §3.3 lets MPL files be combined with GPL-family code in a "Larger Work". It does not relicense the
   AGPL hunks.
 - In practice nothing changes for the binary. `cmd/corten-matrix/main.go` and the `imessage/` packages were
@@ -143,6 +145,10 @@ Does merging AGPL code into the MPL tree create an obligation?
   12 unit tests and 2 `password_state_restore` tests.
 - Not run: the bridge itself, login, setup, `make install`. The new commands have no tests and were not
   exercised.
+- Branch `harden-credentials`, same environment:
+  - `make rust`, `go build ./...` and `go test ./...` (9 packages): PASS.
+  - `go vet ./pkg/connector ./cmd/corten-matrix`: clean.
+  - `cargo test`: 13 unit tests and 2 `password_state_restore` tests, PASS.
 
 GitHub Actions on the fork: the API reports Actions as enabled. Pushes start nothing, though:
 - `build-release-binaries.yml` is `workflow_dispatch` only and needs `OPENCIDER_READ_DEPLOY_KEY` (not set).
@@ -230,36 +236,178 @@ the source needs removing. Releases are fetched from GitHub
     `url_previews_in_backfill` gates only the backfill case
   - Linux only: `ani.sidestore.io`
 
-### Recommended hardening (not implemented), ranked by value against effort
+### Recommended hardening, ranked by value against effort
+
+Status as of branch `harden-credentials` (based on `sync-jason-20261115`). Each item names its commit.
 
 1. Build from source only and never run `corten-matrix update` or a release binary. This removes the
    self-updater and the unauditable OpenCider code. Effort: none.
+   Status: nothing to change in code; it is an operating rule.
 2. Scrub session.json on every logout path. `IMClient.LogoutRemote` (`client.go:2049`) only calls
    `Disconnect`, so a provisioning-API or bridgev2 logout leaves the hash, PET and IDS keys on disk. Only the
    chat `logout` command scrubs. Fix: call `clearLocalSessionBackup` (`commands.go:526`) from `LogoutRemote`
    when the logging-out account owns the file (jason's `clearSessionBackupForAccount` shows the DSID check).
    Effort: small.
+   Status: done, `16b23a53`. `clearSessionBackupForAccount` (`identity_store.go`) removes session.json,
+   identity.plist and trustedpeers.plist when session.json's DSID or IDS users match the login. It runs
+   after `Disconnect`, which waits for the final state save. Test: `TestClearSessionBackupForAccount`.
 3. Tighten file modes at startup: chmod the bridge DB and its `-wal`/`-shm` files to 0600 and the data dir to
    0700. Place: `IMConnector.Start` or `cmd/corten-matrix/ensure_config.go`. Effort: small.
+   Status: done, `b3712b43`, in `cmd/corten-matrix/filemodes.go`. The connector never sees the DB URI, so
+   it runs in `main.go`: before `Init` and after `Start` (a DB created on first run), and after `Init` in
+   `init-db`. SQLite gives new `-wal`/`-shm` files the DB's mode, so they stay 0600. In-memory DSNs,
+   non-SQLite configs and missing files are no-ops. Only `$XDG_DATA_HOME/corten-matrix` is set to 0700,
+   not an arbitrary DB parent directory. Tests: `TestTightenFileModes*`.
 4. Keep one copy of the hash, not two. `account_hashed_password_hex` duplicates what `account_persist_blob`
    already holds. Make the hex field a fallback that is cleared once the blob round-trips
    (`login.go:796`, `client.go:1188`, `identity_store.go`). Effort: small to medium.
+   Status: done behind `network.drop_redundant_password_hash`, default false, `a63ce667`. The key sits under
+   `network:` like every other connector option; bridgev2 owns `bridge:`.
+   - A small binary-plist reader (`password_hash.go`) pulls `account.hashed_password` out of the blob,
+	 only when the blob version is 1 and its ADSID matches the login. These are the same checks
+	 `restore_token_provider` applies.
+   - With the flag on, the hex field is cleared only when the blob holds the identical hash.
+   - Restore, `validateCloudKitRestoreState` and every blob update use the hex when set, else the
+	 blob's hash. If a new blob ever lacks the hash, the hex copy is written back first.
+   - Refresh (`refresh_pet_token`) reads the hash from the in-memory account, and restore fills that
+	 from the blob. So refresh behaves the same either way.
+   - Why the flag: the empty-hex restore was proven only by unit tests, not by a live restart or a
+	 12 h PET refresh. A Rust test pins `encode_persist_blob` output byte for byte, and the Go reader is
+	 tested on that exact output. Turn it on after one live restart plus a refresh cycle.
+   - Tests: `TestPersistBlobPasswordHash*`, `TestDropRedundantPasswordHash`,
+	 `TestValidateCloudKitRestoreStateUsesBlobHash`, Rust `persist_blob_matches_go_fixture`.
 5. Encrypt credentials at rest with a key held in the macOS Keychain. Cover the `UserLoginMetadata` and
    session.json fields listed above. Reuse the AES-GCM code in `carddav_crypto.go`, but load the key from the
    Keychain instead of a key file. Check that a launchd agent can read the login keychain while the screen is
    locked (unverified). Effort: medium.
+   Status: not implemented (as asked). Feasibility findings are below, under "Keychain key for credentials
+   at rest".
 6. Optional "no stored password" mode. Do not persist `hashed_password`, and accept a re-login when the PET
    expires (about 24 h; the exact lifetime is unverified). Touch `persist_data_from_spd`,
    `refresh_pet_token`, `login.go:796`. Effort: medium. Cost: CardDAV and CloudKit stop working until you log
    in again.
+   Status: not implemented (not requested).
 7. Add a config switch for live URL previews (`urlpreview.go`, `fetchURLPreview`) if leaking your IP to
    linked sites matters. Effort: small.
+   Status: done, `1d0942c5` and `686ada1b`.
+   - `network.url_previews`, default false. When off there is no `/preview_url` request and no page or
+	 image GET. It gates five call sites: inbound live (`convertURLPreviewToBeeper`), the outbound
+	 double-puppet edit (`addOutboundURLPreview`), outbound rich-link encoding
+	 (`convertURLPreviewToIMessage`, which also scraped and was missing from the original list), CloudKit
+	 backfill and chat.db backfill.
+   - `url_previews_in_backfill` now applies only when `url_previews` is on
+	 (`IMConfig.BackfillURLPreviews`).
+   - Behaviour change: existing installs stop getting fetched previews after upgrading, until they set
+	 `url_previews: true`.
+   - Test: `TestURLPreviewsSwitchGatesLiveFetches` counts requests through a stub transport.
+   - SSRF: `ogHTTPClient` had no address filter and followed up to 10 redirects (the `net/http` default).
+	 It now dials through `rejectNonPublicDial`, which runs after DNS on every connection, so it covers
+	 each redirect hop and DNS rebinding. It refuses loopback, RFC 1918/ULA, link-local (including
+	 169.254.169.254), CGNAT 100.64/10 (the tailnet), unspecified, multicast, 0/8, NAT64 and
+	 IPv4-mapped forms. `downloadURL` shares the client, so iCloud contact-avatar downloads are filtered
+	 too. Tests: `TestIsPublicAddr`, `TestURLPreviewFetchRefusesLoopback`.
+   - The homeserver's `/preview_url` is the homeserver's own SSRF problem; with `url_previews` off the
+	 bridge no longer calls it.
+   - Rich links without a fetch: yes. When the sender's device attached a rich link, rustpush delivers
+	 it as `x-richlink/meta` (URL, canonical URL, title, description, image MIME) plus
+	 `x-richlink/image` sideband attachments. `convertURLPreviewToBeeper` already turns those into a
+	 `com.beeper.linkpreviews` entry with the uploaded image, and does no HTTP. That path is untouched
+	 by the switch. Only messages without a rich link (SMS, old clients, a bare URL the sender's device
+	 did not unfurl) lose their preview when `url_previews` is off. Outbound previews the Matrix client
+	 supplies are still encoded into the iMessage without a fetch.
+
+### Passwords-app client: removal cost (not removed)
+
+- Verified statically, not at runtime: no Go caller. `rg PasswordsClient pkg/connector cmd pkg/cli` finds
+  nothing outside the generated bindings. In `lib.rs`, `subsystem_state_path("passwords-state.plist")`
+  appears only in `get_or_init_passwords_client`, which only the exported `get_passwords_client`
+  reaches. So the plist is never written by this tree.
+- Removal would need:
+  - deleting `WrappedPasswordsClient` (about 105 lines, `lib.rs` 6316-6422), the `passwords_client`
+	field and init, `get_or_init_passwords_client` and the export;
+  - regenerating `rustpushgo.go` (89 references) and `rustpushgo.h` (31) with `uniffi-bindgen-go` plus
+	`scripts/patch_bindings.py`. The generated Go checks each export's checksum at load time, so the
+	bindings cannot simply be hand-edited. `uniffi-bindgen-go` is not installed here;
+  - optionally dropping the two `passwords.rs` `rp_patch` lines in the Makefile and
+	`tests/password_state_restore.rs`.
+- Merge friction: high. The code came from upstream (`a7ce4572`, Cameron Aaron). `lib.rs` is already the
+  worst conflict file, and the bindings get regenerated by every upstream sync. Each future merge would
+  re-add or conflict on those hunks.
+- Decision: left in place. It is dead code that writes nothing.
+
+### Keychain key for credentials at rest (item 5, investigation only)
+
+When it can be read:
+- pitchfork `boot_start` and `bridge-all` run the bridge from a LaunchAgent. A LaunchAgent starts only
+  when the user logs in, so the "after reboot, before login" case never runs the bridge at all. With
+  FileVault on, auto-login is off, so a reboot means the bridge waits for a login whatever the key
+  storage is.
+- The login keychain is unlocked at login. Screen lock does not lock it unless "Lock when sleeping" or
+  "Lock after N minutes" is set on that keychain; both are off by default. A LaunchAgent in the user's
+  session can read it while the screen is locked. Unverified on this Mac: check with
+  `security show-keychain-info ~/Library/Keychains/login.keychain-db`.
+- `kSecAttrAccessibleAfterFirstUnlock` does not apply to the login (file-based) keychain. It is a
+  data-protection-keychain attribute (`kSecUseDataProtectionKeychain`). On macOS that keychain needs a
+  `keychain-access-groups` or application-identifier entitlement, which means a Developer ID or
+  provisioning profile. The Makefile's ad-hoc `codesign --sign -` binary gets `errSecMissingEntitlement`
+  (-34018). Without a paid signing identity, the login keychain is the only option.
+
+Access control on the login keychain:
+- Items carry a trusted-application list checked against the code signature's designated requirement.
+  For an ad-hoc signature that requirement is the cdhash, which changes on every rebuild. Each rebuild
+  would then raise a GUI "allow access" prompt that a headless agent cannot answer, and the read blocks
+  or fails.
+- Options:
+  - (a) Sign with a stable self-signed code-signing certificate, so the requirement is
+	"identifier com.lrhodin.corten-matrix and certificate leaf H". Rebuilds stay trusted, and other
+	same-user processes are refused. This is the only option that also protects against other
+	processes of the same user.
+  - (b) Store the item with `security add-generic-password -A`. Any process of the user can read it
+	without a prompt. That still protects backups, disk images and copied data dirs, but not malware
+	running as the user.
+  - (c) Read through `/usr/bin/security find-generic-password -w`. Then the trusted app is the
+	Apple-signed `security` tool, which in practice equals (b), and the key passes through a pipe.
+
+Which API:
+- Go: `github.com/keybase/go-keychain` (cgo, Security.framework, `SecItemAdd`/`SecItemCopyMatching`).
+  It fits, because the encrypting code (`carddav_crypto.go`, `identity_store.go`, `dbmeta.go`) is Go
+  and the package already uses cgo. It is one new dependency.
+- Rust: the `security-framework` crate (`passwords::get_generic_password`). It would add an FFI export
+  and a bindings regeneration (see the Passwords section above), for no gain.
+- `/usr/bin/security`: no dependency, but it has the ACL weakness in (c).
+
+Where AES-GCM plugs in:
+- `carddav_crypto.go` already has AES-256-GCM. Only `loadCardDAVKey`/`generateCardDAVKey` touch the
+  0600 key file. Replace those two with a Keychain get-or-create (service `corten-matrix`, account
+  `credentials-key`), keeping the file as a migration source.
+- session.json: encrypt the marshalled JSON in `saveSessionStateLocked` before
+  `writeSessionFileAtomically`. Decrypt in `loadSessionStateLocked`, plus `ListHandles` and
+  `CheckSessionRestore`, which read the file directly. A magic prefix lets plaintext files load once and
+  get re-encrypted on the next save.
+- `UserLoginMetadata` (bridge DB): wrap the secret fields in a string type whose
+  MarshalJSON/UnmarshalJSON encrypts and decrypts with an `enc:v1:` prefix. The fields are
+  `AccountHashedPasswordHex`, `AccountPET`, `AccountPersistBlob`, `MmeDelegateJSON`, `IDSIdentity`,
+  `APSState` and `IDSUsers`. The DB layer stays untouched, and unprefixed values read as legacy
+  plaintext.
+- Failure mode to design for: if the Keychain is unreadable (locked, prompt denied), the bridge must
+  fail closed with a clear "keychain locked" bridge state, not treat the login as gone and wipe it.
+- Each `bridge-all` account has its own data dir and needs its own Keychain account name, since both
+  run as the same OS user.
+- Effort stays medium: about 150 lines plus migration tests. The signing choice in (a) is the decision
+  that decides how much it protects.
 
 ## Open decisions for the user
 
 - Multi-user and per-user settings (a8713b33, a5f4a13f, c96e51a0) and the Docker flow: take them, or stay on
   lwittwer's one-process-per-account model?
-- StatusKit topic style (5f85500c): port it with lwittwer's notice behaviour as the default?
+- StatusKit topic style (5f85500c): ported with lwittwer's moon-in-title as the default. Nothing left to
+  decide unless jason's "notice" style is wanted back.
+- `url_previews` defaults to off, which changes behaviour for existing installs. Keep the default, or ship
+  it on?
+- `drop_redundant_password_hash`: turn it on after one live restart and a 12 h PET refresh succeed?
+- Keychain encryption (item 5): it only helps against other same-user processes with a stable signing
+  identity. Is a self-signed code-signing certificate acceptable?
 - `keychain-join` (from 595ce7e9): port it? It asks for a device passcode in chat.
 - Licence labelling of jason's hunks inside MPL-headed files.
-- Which credential-hardening items to implement.
+- Credential hardening: items 2, 3, 4 (behind a flag) and 7 are done on `harden-credentials`; 5 and 6
+  are open.
