@@ -122,6 +122,15 @@ type IMConfig struct {
 	// want the indicator or who rely on other Apple devices for Focus visibility.
 	StatusKitNotifications bool `yaml:"statuskit_notifications"`
 
+	// StatusKitNotificationStyle controls how an enabled StatusKit
+	// notification (see StatusKitNotifications) is shown in a contact's DM:
+	//   - "title" (the default): appends a 🌙 to the DM's chat title.
+	//   - "topic": sets the DM room topic to the contact's state (e.g.
+	//     "🔕 Do Not Disturb") and clears it when they become available again,
+	//     overwriting any topic set on the room by hand. The title is left alone.
+	// An invalid or empty value falls back to "title".
+	StatusKitNotificationStyle string `yaml:"statuskit_notification_style"`
+
 	// ReadReceipts controls whether iMessage contacts see that you read their
 	// messages in Matrix; it is the bridge's counterpart to the iPhone's "Send
 	// Read Receipts" toggle, which the bridge can't see. SMS/RCS chats follow
@@ -246,6 +255,12 @@ func (c *IMConfig) FormatDisplayname(params DisplaynameParams) string {
 	return name
 }
 
+// StatusKitTopicStyle reports whether Focus/DND state goes into the DM topic
+// instead of the DM title.
+func (c *IMConfig) StatusKitTopicStyle() bool {
+	return c.StatusKitNotificationStyle == "topic"
+}
+
 // BackfillURLPreviews reports whether backfilled messages get fetched link previews.
 func (c *IMConfig) BackfillURLPreviews() bool {
 	return c.URLPreviews && c.URLPreviewsInBackfill
@@ -276,6 +291,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Bool, "bridge_filtered_chats")
 	helper.Copy(up.Bool, "statuskit_share_on_startup")
 	helper.Copy(up.Bool, "statuskit_notifications")
+	helper.Copy(up.Str, "statuskit_notification_style")
 	helper.Copy(up.Bool, "read_receipts")
 	helper.Copy(up.Bool, "typing_notifications")
 	helper.Copy(up.Bool, "disable_icloud_contacts")

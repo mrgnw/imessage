@@ -2540,6 +2540,31 @@ func (c *IMClient) OnStatusUpdate(user string, mode *string, available bool) {
 		// on implicit naming so we never mass-seize NameIsCustom (which would
 		// also freeze ghost avatar updates) across DMs. portal.Name may be
 		// empty for implicitly-named DMs, so a title!=Name gate alone isn't safe.
+		if portal.RoomType == database.RoomTypeDM && c.Main.Config.StatusKitTopicStyle() {
+			c.UserLogin.QueueRemoteEvent(&simplevent.ChatInfoChange{
+				EventMeta: simplevent.EventMeta{
+					Type: bridgev2.RemoteEventChatInfoChange,
+					PortalKey: networkid.PortalKey{
+						ID:       portal.ID,
+						Receiver: c.UserLogin.ID,
+					},
+					LogContext: func(lc zerolog.Context) zerolog.Context {
+						return lc.Str("portal_mxid", string(portal.MXID)).
+							Str("source", "focus_status").
+							Bool("silenced", silenced)
+					},
+				},
+				ChatInfoChange: &bridgev2.ChatInfoChange{
+					ChatInfo: &bridgev2.ChatInfo{
+						Topic:                      ptr.Ptr(statusKitTopic(modeCopy)),
+						ExcludeChangesFromTimeline: true,
+					},
+				},
+			})
+			log.Info().Str("portal_mxid", string(portal.MXID)).Bool("silenced", silenced).
+				Msg("StatusKit: updated DM topic for focus change")
+			return
+		}
 		if portal.RoomType == database.RoomTypeDM && (silenced || portal.NameIsCustom) {
 			nameField := c.dmFocusName(ctx, portal)
 			if nameField == nil {
@@ -2668,6 +2693,26 @@ func (c *IMClient) isPortalSilenced(ctx context.Context, portalID networkid.Port
 	return time.Since(time.UnixMilli(ms)) < presenceMoonTTL
 }
 
+// dmTitleShowsFocus reports whether the DM title should carry the 🌙: the peer
+// is silenced and the configured style puts focus in the title, not the topic.
+func (c *IMClient) dmTitleShowsFocus(ctx context.Context, portalID networkid.PortalID) bool {
+	return !c.Main.Config.StatusKitTopicStyle() && c.isPortalSilenced(ctx, portalID)
+}
+
+// statusKitTopic returns the DM topic for a focus mode: "🔕 <label>" while
+// silenced, "" (clears the topic) when available.
+func statusKitTopic(mode *string) string {
+	if mode == nil || *mode == "" {
+		return ""
+	}
+	for _, m := range wellKnownFocusModes {
+		if m.ID == *mode {
+			return "🔕 " + m.Label
+		}
+	}
+	return "🔕 Focus"
+}
+
 // dmBaseName returns the name a DM's title shows WITHOUT the moon, matching the
 // authority that NORMALLY names that chat — so adding/removing 🌙 only ever
 // toggles the suffix and never swaps the underlying name (which is what caused
@@ -2699,7 +2744,7 @@ func (c *IMClient) dmBaseName(ctx context.Context, portal *bridgev2.Portal) stri
 // (refreshDMPortalNamesFromContacts) call it, so they can never disagree.
 func (c *IMClient) computeDMTitle(ctx context.Context, portal *bridgev2.Portal) string {
 	base := c.dmBaseName(ctx, portal)
-	if base != "" && c.isPortalSilenced(ctx, portal.ID) {
+	if base != "" && c.dmTitleShowsFocus(ctx, portal.ID) {
 		base += " 🌙"
 	}
 	return base
@@ -2718,7 +2763,7 @@ func (c *IMClient) computeDMTitle(ctx context.Context, portal *bridgev2.Portal) 
 // Returns nil when the contact name hasn't resolved yet, meaning "leave the name
 // alone" — never stamp an empty/lone-🌙 title (that blanks the DM).
 func (c *IMClient) dmFocusName(ctx context.Context, portal *bridgev2.Portal) *string {
-	if c.isPortalSilenced(ctx, portal.ID) {
+	if c.dmTitleShowsFocus(ctx, portal.ID) {
 		title := c.computeDMTitle(ctx, portal)
 		// computeDMTitle returns "" when the contact name isn't resolved yet
 		// (e.g. contacts not loaded). Don't stamp that — it would blank the DM

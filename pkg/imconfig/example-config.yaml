@@ -89,6 +89,12 @@ statuskit_share_on_startup: true
 # identity is unaffected, so peer reshare eligibility is kept).
 statuskit_notifications: true
 
+# How the Focus/DND state above is shown in a contact's DM. "title" (default)
+# appends the 🌙 to the DM's chat title. "topic" instead sets the DM room topic
+# to the contact's state (e.g. "🔕 Do Not Disturb") and clears it when they
+# become available again, overwriting any topic you set on the room by hand.
+statuskit_notification_style: title
+
 # DEVELOPMENT ONLY — leave this false in any real deployment.
 # Reverts the bridge's privacy protections so plaintext is observable for
 # debugging. When true:

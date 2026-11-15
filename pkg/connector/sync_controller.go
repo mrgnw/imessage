@@ -1826,7 +1826,7 @@ func (c *IMClient) refreshDMPortalNamesFromContacts(log zerolog.Logger) {
 		// stamping those would mass-seize NameIsCustom (and freeze ghost avatars)
 		// across every DM on the first tick.
 		broken := portal.NameSet && portal.Name == ""
-		if !c.isPortalSilenced(ctx, portal.ID) && !portal.NameIsCustom && !broken {
+		if !c.dmTitleShowsFocus(ctx, portal.ID) && !portal.NameIsCustom && !broken {
 			continue
 		}
 		// Recompute the title (contact name + 🌙 when silenced) or, when
