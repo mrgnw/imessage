@@ -325,6 +325,24 @@ func loadSessionStateLocked(log zerolog.Logger) PersistedSessionState {
 	return state
 }
 
+// clearSessionBackupForAccount scrubs the session backup files when session.json
+// belongs to the account being logged out (matched by DSID or IDS users), so a
+// logout through any path does not leave the hash, PET or IDS keys on disk.
+// Holds the lock across the ownership check and removal so a concurrent save
+// for another account cannot be deleted in between.
+func clearSessionBackupForAccount(log zerolog.Logger, dsid, idsUsers string) int {
+	sessionStateMu.Lock()
+	defer sessionStateMu.Unlock()
+	state := loadSessionStateLocked(log)
+	ownedByDSID := dsid != "" && state.AccountDSID == dsid
+	ownedByUsers := idsUsers != "" && state.IDSUsers == idsUsers
+	if !ownedByDSID && !ownedByUsers {
+		log.Debug().Msg("session.json does not belong to the logging-out account, leaving it in place")
+		return 0
+	}
+	return clearLocalSessionBackup(&log)
+}
+
 // ListHandles returns the available iMessage handles (phone numbers and
 // email addresses) from the backup session state. Returns nil if no valid
 // session state is found. Intended for CLI use (list-handles subcommand).

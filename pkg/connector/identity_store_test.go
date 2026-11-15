@@ -217,3 +217,50 @@ func TestSaveSessionStateReportsWriteFailure(t *testing.T) {
 		t.Fatal("session save did not report an unwritable session path")
 	}
 }
+
+func TestClearSessionBackupForAccount(t *testing.T) {
+	log := zerolog.Nop()
+	cases := []struct {
+		name        string
+		dsid        string
+		idsUsers    string
+		wantRemoved bool
+	}{
+		{"matching dsid", "dsid-a", "", true},
+		{"matching ids users", "", "users-a", true},
+		{"other account", "dsid-b", "users-b", false},
+		{"no identifiers", "", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("XDG_DATA_HOME", t.TempDir())
+			if err := saveSessionState(log, PersistedSessionState{
+				AccountDSID:              "dsid-a",
+				IDSUsers:                 "users-a",
+				AccountHashedPasswordHex: "hash",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			peersPath, err := trustedPeersFilePath()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.WriteFile(peersPath, []byte("peers"), 0600); err != nil {
+				t.Fatal(err)
+			}
+
+			clearSessionBackupForAccount(log, tc.dsid, tc.idsUsers)
+
+			sessionPath, err := sessionFilePath()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, p := range []string{sessionPath, peersPath} {
+				_, statErr := os.Stat(p)
+				if gone := os.IsNotExist(statErr); gone != tc.wantRemoved {
+					t.Fatalf("%s removed = %v, want %v", filepath.Base(p), gone, tc.wantRemoved)
+				}
+			}
+		})
+	}
+}

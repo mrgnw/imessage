@@ -2076,6 +2076,9 @@ func (c *IMClient) runReceiveWedgeWatchdog(stop chan struct{}, log zerolog.Logge
 
 func (c *IMClient) LogoutRemote(ctx context.Context) {
 	c.Disconnect()
+	if meta, ok := c.UserLogin.Metadata.(*UserLoginMetadata); ok {
+		clearSessionBackupForAccount(c.UserLogin.Log, meta.AccountDSID, meta.IDSUsers)
+	}
 }
 
 func (c *IMClient) IsThisUser(_ context.Context, userID networkid.UserID) bool {
