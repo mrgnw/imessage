@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -210,14 +213,53 @@ func fetchPageMetadata(ctx context.Context, targetURL string) map[string]string 
 
 // ogHTTPClient uses TLS 1.3 to avoid bot detection via TLS fingerprinting.
 // Sites like Reddit reject Go's default TLS 1.2 handshake with HTTP 403.
+// Every dial, including each redirect hop, must land on a public address, so a
+// message sender cannot point the bridge at localhost, the LAN or the tailnet.
 var ogHTTPClient = &http.Client{
 	Timeout: 10 * time.Second,
 	Transport: &http.Transport{
+		DialContext: (&net.Dialer{Timeout: 10 * time.Second, Control: rejectNonPublicDial}).DialContext,
 		TLSClientConfig: &tls.Config{
 			MinVersion: tls.VersionTLS13,
 			MaxVersion: tls.VersionTLS13,
 		},
 	},
+}
+
+var errNonPublicAddress = errors.New("refusing to fetch from a non-public address")
+
+var nonPublicPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("64:ff9b::/96"),
+}
+
+func rejectNonPublicDial(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return err
+	}
+	if !isPublicAddr(ip) {
+		return fmt.Errorf("%w: %s", errNonPublicAddress, ip)
+	}
+	return nil
+}
+
+func isPublicAddr(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() {
+		return false
+	}
+	for _, prefix := range nonPublicPrefixes {
+		if prefix.Contains(ip) {
+			return false
+		}
+	}
+	return true
 }
 
 // fetchPageMetadataWithUA fetches a URL with a specific User-Agent and extracts
