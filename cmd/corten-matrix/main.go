@@ -167,6 +167,7 @@ func main() {
 			repairPermissions(&m)
 			migrateDatabaseOwner(&m)
 			m.Init()
+			tightenDataFileModes(&m)
 			fmt.Fprintln(os.Stderr, "Database initialized successfully")
 			os.Exit(0)
 		default:
@@ -225,8 +226,10 @@ func main() {
 	ensureSQLiteWriteSerialization(&m)
 	repairPermissions(&m)
 	migrateDatabaseOwner(&m)
+	tightenDataFileModes(&m)
 	m.Init()
 	m.Start()
+	tightenDataFileModes(&m)
 	exitCode := m.WaitForInterrupt()
 	m.Stop()
 	os.Exit(exitCode)
