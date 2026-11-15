@@ -76,6 +76,13 @@ var metaTagRegex = regexp.MustCompile(
 // titleRegex extracts the <title> tag content as a last-resort fallback.
 var titleRegex = regexp.MustCompile(`(?i)<title[^>]*>([^<]+)</title>`)
 
+// liveURLPreviewsEnabled reports whether the url_previews switch allows the
+// bridge to fetch link previews, for code that only has the bridge at hand.
+func liveURLPreviewsEnabled(bridge *bridgev2.Bridge) bool {
+	connector, ok := bridge.Network.(*IMConnector)
+	return ok && connector.Config.URLPreviews
+}
+
 // fetchURLPreview builds a BeeperLinkPreview by fetching the target URL's
 // metadata. It tries the homeserver's /preview_url first, then falls back to
 // fetching the HTML and parsing meta tags directly (og:, twitter:, standard

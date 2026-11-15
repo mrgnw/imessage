@@ -6681,6 +6681,10 @@ func (c *IMClient) convertURLPreviewToIMessage(ctx context.Context, content *eve
 		return "\x00RL\x01" + lp.MatchedURL + "\x01" + canonical + "\x01" + lp.Title + "\x01" + lp.Description + "\x00" + body
 	}
 
+	if !c.Main.Config.URLPreviews {
+		return body
+	}
+
 	// Priority 2: Auto-detect URL and fetch preview via homeserver or og: scraping
 	if detectedURL := urlRegex.FindString(body); detectedURL != "" && isLikelyURL(detectedURL) {
 		fetchURL := normalizeURL(detectedURL)
@@ -6866,7 +6870,7 @@ func (c *IMClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Matrix
 	// edit for both nil (field omitted) and empty slice (client couldn't preview)
 	// since the bridge has its own og: scraper that can often succeed where
 	// the client couldn't.
-	if len(msg.Content.BeeperLinkPreviews) == 0 {
+	if c.Main.Config.URLPreviews && len(msg.Content.BeeperLinkPreviews) == 0 {
 		if detectedURL := urlRegex.FindString(msg.Content.Body); detectedURL != "" && isLikelyURL(detectedURL) {
 			go c.addOutboundURLPreview(msg.Event.ID, msg.Portal.MXID, msg.Content.Body, msg.Content.MsgType, detectedURL)
 		}
@@ -9528,7 +9532,7 @@ func (c *IMClient) cloudRowToBackfillMessages(ctx context.Context, row cloudMess
 	hasText := body != "" || rowSubject != ""
 	if hasText {
 		var previews []*event.BeeperLinkPreview
-		if c.Main.Config.URLPreviewsInBackfill {
+		if c.Main.Config.BackfillURLPreviews() {
 			if detectedURL := urlRegex.FindString(row.Text); detectedURL != "" {
 				previews = []*event.BeeperLinkPreview{
 					fetchURLPreview(ctx, c.Main.Bridge, c.Main.Bridge.Bot, "", detectedURL),
@@ -12741,6 +12745,10 @@ func convertURLPreviewToBeeper(ctx context.Context, portal *bridgev2.Portal, int
 
 		log.Debug().Str("matched_url_host", logSafeURL(matchedURL)).Bool("has_title", title != "").Msg("Inbound rich link preview ready")
 		return []*event.BeeperLinkPreview{preview}
+	}
+
+	if !liveURLPreviewsEnabled(portal.Bridge) {
+		return nil
 	}
 
 	// No rich link from iMessage — auto-detect URL and fetch og: metadata + image

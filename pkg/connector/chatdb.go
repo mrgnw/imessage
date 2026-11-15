@@ -259,7 +259,7 @@ func (db *chatDB) FetchMessages(ctx context.Context, params bridgev2.FetchMessag
 
 		// Only create a text part if there's actual text content
 		if msg.Text != "" || msg.Subject != "" {
-			cm, err := convertChatDBMessage(ctx, params.Portal, intent, msg, c.Main.Config.URLPreviewsInBackfill)
+			cm, err := convertChatDBMessage(ctx, params.Portal, intent, msg, c.Main.Config.BackfillURLPreviews())
 			if err == nil {
 				backfillMessages = append(backfillMessages, &bridgev2.BackfillMessage{
 					ConvertedMessage: cm,

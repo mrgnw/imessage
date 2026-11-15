@@ -61,6 +61,15 @@ type IMConfig struct {
 	// are buffered in memory while downloading. Default 100.
 	MaxAttachmentSizeMB int `yaml:"max_attachment_size_mb"`
 
+	// URLPreviews lets the bridge build link previews itself: it asks the
+	// homeserver's /preview_url and HTTP-GETs the linked page and its image
+	// from this machine as soon as a message with a URL arrives or is sent.
+	// That reveals this host's IP and the timing to every linked site. When
+	// false, no such fetch happens; previews that arrive with the message
+	// (iMessage rich links, Matrix client previews) are still bridged.
+	// Default false.
+	URLPreviews bool `yaml:"url_previews"`
+
 	// URLPreviewsInBackfill controls whether the bridge fetches link-preview
 	// metadata (og:/twitter: tags + thumbnail image) for messages that
 	// contain a URL during backfill. Each URL-bearing message triggers up to
@@ -68,7 +77,8 @@ type IMConfig struct {
 	// download + re-upload) inline with conversion, which on a slow uplink
 	// dominates backfill wall-clock time. Setting this to false skips
 	// preview generation for backfilled history only; live inbound messages
-	// and outbound edits still build previews normally. Default true.
+	// and outbound edits still build previews normally. Only applies when
+	// URLPreviews is true. Default true.
 	URLPreviewsInBackfill bool `yaml:"url_previews_in_backfill"`
 
 	// PreferredHandle overrides the outgoing iMessage identity.
@@ -236,6 +246,11 @@ func (c *IMConfig) FormatDisplayname(params DisplaynameParams) string {
 	return name
 }
 
+// BackfillURLPreviews reports whether backfilled messages get fetched link previews.
+func (c *IMConfig) BackfillURLPreviews() bool {
+	return c.URLPreviews && c.URLPreviewsInBackfill
+}
+
 // UseChatDBBackfill returns true when backfill is enabled and sourced from chat.db.
 func (c *IMConfig) UseChatDBBackfill() bool {
 	return c.CloudKitBackfill && c.BackfillSource == "chatdb"
@@ -254,6 +269,7 @@ func upgradeConfig(helper up.Helper) {
 	helper.Copy(up.Bool, "heic_conversion")
 	helper.Copy(up.Int, "heic_jpeg_quality")
 	helper.Copy(up.Int, "max_attachment_size_mb")
+	helper.Copy(up.Bool, "url_previews")
 	helper.Copy(up.Bool, "url_previews_in_backfill")
 	helper.Copy(up.Str, "preferred_handle")
 	helper.Copy(up.Bool, "disable_facetime")

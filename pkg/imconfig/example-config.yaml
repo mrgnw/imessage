@@ -35,8 +35,16 @@ heic_jpeg_quality: 95
 # small host can exhaust memory. Default 100.
 max_attachment_size_mb: 100
 
+# Let the bridge fetch link previews itself. When true, every URL in a sent or
+# received message makes the bridge ask your homeserver for a preview and
+# HTTP-GET the page and its image from this machine, the moment the message
+# arrives. That tells every linked site your IP address and when you got the
+# link. When false (default), nothing is fetched; rich links that come with an
+# iMessage and previews your Matrix client attaches are still bridged.
+url_previews: false
+
 # Fetch link previews (og:/twitter: tags + thumbnail) for URL-bearing
-# messages during backfill. Each URL triggers up to three HTTP round-trips
+# messages during backfill. Only applies when url_previews is true. Each URL triggers up to three HTTP round-trips
 # (homeserver preview, page fetch, image download + re-upload) inline with
 # conversion — on a slow uplink this dominates backfill time. Set to false
 # to skip previews during backfill only; live inbound messages and outbound
